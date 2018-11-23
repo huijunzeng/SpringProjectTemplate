@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:aop="http://www.springframework.org/schema/aop" xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:task="http://www.springframework.org/schema/task"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans 
+http://www.springframework.org/schema/beans/spring-beans.xsd 
+http://www.springframework.org/schema/context 
+http://www.springframework.org/schema/context/spring-context.xsd 
+http://www.springframework.org/schema/tx 
+http://www.springframework.org/schema/tx/spring-tx.xsd 
+http://www.springframework.org/schema/aop  
+http://www.springframework.org/schema/aop/spring-aop.xsd
+http://www.springframework.org/schema/task 
+http://www.springframework.org/schema/task/spring-task.xsd">
+
+	<!-- spring父容器中移除@Controller注解的类的注入，在springMVC子容器中扫描注入 -->
+	<context:component-scan base-package="com.abc">
+		<context:exclude-filter type="annotation"
+			expression="org.springframework.stereotype.Controller" />
+	</context:component-scan>
+
+	<!--加载单个properties文件的用法 <context:property-placeholder location="classpath:redis.properties" 
+		/> -->
+	<!-- 加载多个properties文件的用法 -->
+	<bean
+		class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<!-- 加载顺序 -->
+		<property name="order" value="1" />  
+		<!-- 是否忽略不可解析的Placeholder -->
+	    <property name="ignoreUnresolvablePlaceholders" value="true" />  
+	    <property name="locations">  
+			<list>
+				<value>classpath:database.properties</value>
+				<value>classpath:redis.properties</value>
+			</list>
+		</property>
+	</bean>
+	
+	<!-- mysql配置 开始 -->
+	<bean id="dataSource" class="com.mchange.v2.c3p0.ComboPooledDataSource">
+		<property name="driverClass">
+			<value>${db.jdbc.driverClass}</value>
+		</property>
+		<property name="jdbcUrl">
+			<value>${db.jdbc.url}</value>
+		</property>
+		<property name="user">
+			<value>${db.jdbc.username}</value>
+		</property>
+		<property name="password">
+			<value>${db.jdbc.password}</value>
+		</property>
+		<property name="initialPoolSize">
+			<value>${db.initialPoolSize}</value>
+		</property>
+		<property name="minPoolSize">
+			<value>${db.minPoolSize}</value>
+		</property>
+		<property name="maxPoolSize">
+			<value>${db.maxPoolSize}</value>
+		</property>
+		<property name="maxStatements">
+			<value>${db.maxStatements}</value>
+		</property>
+		<property name="maxIdleTime">
+			<value>${db.maxIdleTime}</value>
+		</property>
+		<property name="acquireIncrement">
+			<value>${db.acquireIncrement}</value>
+		</property>
+		<property name="acquireRetryAttempts">
+			<value>${db.acquireRetryAttempts}</value>
+		</property>
+		<property name="acquireRetryDelay">
+			<value>${db.acquireRetryDelay}</value>
+		</property>
+		<property name="checkoutTimeout">
+			<value>${db.checkoutTimeout}</value>
+		</property>
+	</bean>
+
+	<!-- 将JDBCTemplate放入spring容器 -->
+	<bean name="jdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate" >
+	    <property name="dataSource" ref="dataSource" ></property>
+	</bean>
+
+	<!--事务管理数据库连接池 -->
+	<bean id="transactionManager"
+		class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<!--数据库事务配置 -->
+	<tx:annotation-driven transaction-manager="transactionManager" />
+	<!-- mysql配置 结束 -->
+
+	<!-- redis配置 开始 -->
+	<!-- 1.创建jedis连接池配置对象 -->
+	<bean id="jedisPoolConfig" class="redis.clients.jedis.JedisPoolConfig">
+		<!--最大空闲数-->  
+		<property name="maxIdle" value="${redis.maxIdle}" />  
+		<!-- 最大连接数 -->
+		<property name="maxTotal" value="${redis.maxTotal}" />
+		<!-- 最大建立连接等待时间 -->
+		<property name="maxWaitMillis" value="${redis.maxWaitMillis}" /> 
+		 <!--是否在从池中取出连接前进行检验,如果检验失败,则从池中去除连接并尝试取出另一个-->  
+        <property name="testOnBorrow" value="${redis.testOnBorrow}" />
+	</bean>
+	<!-- 2.创建连接工厂对象 (类似：LocalSessionFactoryBean) -->
+	<bean id="JedisConnectionFactory"
+		class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory">
+		<!-- 关联 连接池配置对象 -->
+		<property name="poolConfig" ref="jedisPoolConfig" />
+		<!-- redis的主机 -->
+		<property name="hostName" value="${redis.host}" />
+		<!-- redis的端口 -->
+		<property name="port" value="${redis.port}" />
+		<!-- <property name="password" value="${redis.password}" /> -->
+		<!-- 指定操作数据库索引，从0开始 -->
+		<property name="database" value="1" />
+	</bean>
+	<!-- 3.创建RedisTemlate(类似:HibernateTemplate) -->
+	<bean id="redisTemplate" class="org.springframework.data.redis.core.RedisTemplate">
+		<!-- 关联连接工厂 -->
+		<property name="connectionFactory" ref="JedisConnectionFactory" />
+		<!--spring data redis提供序列化器 -->
+		<!--key的序列化器 -->
+		<property name="keySerializer">
+			<bean
+				class="org.springframework.data.redis.serializer.StringRedisSerializer" />
+		</property><!-- value的序列化器 -->
+		<property name="valueSerializer">
+			<bean
+				class="org.springframework.data.redis.serializer.StringRedisSerializer" />
+		</property>
+		<!--开启事务  -->  
+        <property name="enableTransactionSupport" value="true"></property>  
+	</bean>
+	<!-- redis配置 结束 -->
+
+	<!--Spring 集成线程池，不允许自己开启线程-->
+    <bean id="taskExecutor" class="org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor">
+        <!-- 线程池维护线程的最少数量 -->
+        <property name="corePoolSize" value="9"/>
+        <!-- 线程池维护线程所允许的空闲时间 -->
+        <property name="keepAliveSeconds" value="300"/>
+        <!-- 线程池维护线程的最大数量 -->
+        <property name="maxPoolSize" value="20"/>
+        <!-- 线程池所使用的缓冲队列 -->
+        <property name="queueCapacity" value="30"/>
+        <!-- 策略   CallerRunsPolicy在任务被拒绝添加后，会调用当前线程池的所在的线程去执行被拒绝的任务 -->
+        <property name="rejectedExecutionHandler">
+        	<bean class="java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy"/>
+        </property>
+    </bean>
+	<!-- 注解式 -->  
+    <task:annotation-driven /> 
+	
+</beans>
